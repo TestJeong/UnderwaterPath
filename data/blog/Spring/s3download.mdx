@@ -1,0 +1,211 @@
+---
+title: 'S3에서 파일을 다운로드하기(feat. octet-stream, 프리사인 URL)'
+date: 2024-05-30 16:21:13
+tags: ['spring']
+draft: false
+summary: 파일 다운로드의 핵심은 크게 Content-Type과 Content-Disposition 입니다. 각각 어떤 것인지 먼저 알아보겠습니다.
+---
+
+## Content-Type, Contnet-Disposition란?
+
+파일 다운로드의 핵심은 크게 **Content-Type**과 **Content-Disposition** 입니다. 각각 어떤 것인지 먼저 알아보겠습니다.
+
+### Content-Type : application/octet-stream
+
+보통 파일을 전송하거나 처리할 때 사용하는 MIME 타입중 하나를 이용합니다.
+
+MIME 타입은 인터넷을 통해서 전송되는 파일의 종류를 지정하는 표준 형식입니다. 예를 들어, 텍스트 파일은 `text/plain`, HTML 파일은 text/html, 이미지 파일은 image/jpeg 와 같은 MIME 타입을 가지며 이를 통해 서버와 클라이언트는 어떤 데이터를 주고 받는지 알 수가 있습니다.
+
+그럼 여기서 application/octet-stream이란 바이너리 데이터를 나타내는 MIME 타입 입니다. 여기서 "octet-stream"은 8비트로 구성된 데이터를 의미합니다. 즉 파일이 어떤 형식인지 명확히 알 수 없을때 사용되는 타입입니다.
+
+예시를 통해 조금 더 쉽게 말해보겠습니다.
+
+서버에 PDF 파일이나 엑셀 파일, 한글 파일이 저장되어 있는데, 서버가 이 파일들을 다운로드할 때 파일의 종류를 구분하지 않고 단순히 파일로 전달한다면, 이때 파일의 타입을 `application/octet-stream`으로 지정할 수 있습니다. 이는 서버가 "이 파일이 어떤 종류인지 알지 못하지만, 데이터를 그대로 전달할 수 있다"는 뜻으로 사용됩니다.
+
+Contet-Type에 application/octet-stream을 사용하여 어떤 파일을 클라이언트에게 보낼건지 정할 수 있습니다.
+
+### Content-Disposition : attachment;
+
+HTTP 헤더 중 하나로, 웹 서버가 웹 브라우저나 클라이언트에게 파일을 어떻게 처리 해야하는지 알려주는 역할을 합니다. 예를들어 파일을 브라우저에 바로 표시할지 아니면 다운로드를 시도할지 등을 결정 하는 것을 말합니다.
+
+Content-Disposition에는 크게 2가지 타입이 있는데 알아보도록 하겠습니다.
+
+- inline: 파일을 **브라우저에서 바로 표시**하는 옵션입니다. 예를 들어, PDF나 이미지 파일은 브라우저 내에서 바로 열리게 할 수 있습니다.
+- attachment: 파일을 **다운로드하게 만드는** 옵션입니다. 이 경우 브라우저는 파일을 다운로드 창을 통해 저장할 수 있도록 합니다
+
+## S3를 이용한 다운로드 구현
+
+한개의 파일인 경우와 파일이 여러개일 경우는 ZIP파일을 활용하는데 아래에서 살펴보겠습니다.
+
+### 일반 파일 다운로드
+
+전체코드
+
+```java
+public void setFileDownload(HttpServletResponse response, String bucketName, String keyName) throws IOException, AmazonS3Exception {
+    // 1. S3에서 파일 가져오기
+    try (S3Object s3Object = amazonS3.getObject(bucketName, keyName)) {
+
+        // 2. 파일 데이터를 바이트 배열로 변환
+        byte[] buffer = IOUtils.toByteArray(s3Object.getObjectContent());
+
+            // 3. 응답 헤더 설정
+        ContentDisposition contentDisposition = ContentDisposition.builder("attachment")
+                .filename(URLEncoder.encode(extractFileName(s3Object.getKey()), StandardCharsets.UTF_8))
+                .build();
+        response.setHeader(HttpHeaders.CONTENT_DISPOSITION, contentDisposition.toString());
+        response.setStatus(HttpServletResponse.SC_OK);
+        response.setContentType(MediaType.APPLICATION_OCTET_STREAM_VALUE);
+
+         // 4. 파일 데이터를 응답으로 보내기
+        response.getOutputStream().write(buffer);
+        response.getOutputStream().flush();
+    }
+}
+```
+
+#### 1. S3에서 파일 가져오기
+
+```java
+try (S3Object s3Object = amazonS3.getObject(bucketName, keyName)) { ... }
+```
+
+- **S3Object** **가져오기**: `amazonS3.getObject(bucketName, keyName)`을 사용해 S3에 있는 특정 파일을 가져옵니다. 이 파일은 `S3Object` 형태로 반환되며, S3에 저장된 객체의 콘텐츠와 메타데이터를 포함하고 있습니다.
+- **try-with-resources 사용**: `try` 블록에서 `S3Object`를 가져오고, 블록이 끝나면 자동으로 자원을 해제합니다. 이렇게 하면 파일을 가져온 뒤 **자동으로 스트림이 닫히기 때문에** 자원 관리를 쉽게 할 수 있습니다.
+
+#### 2. 파일 데이터를 바이트 배열로 변환
+
+```java
+byte[] buffer = IOUtils.toByteArray(s3Object.getObjectContent());
+```
+
+- **파일 읽기**: `IOUtils.toByteArray()` 메서드를 사용해 **S3 객체의 콘텐츠**를 **바이트 배열**로 변환합니다. 파일의 내용을 메모리에 모두 올려서 다룰 수 있습니다.
+
+#### 3. 응답 헤더 설정
+
+```java
+ContentDisposition contentDisposition = ContentDisposition.builder("attachment")
+        .filename(URLEncoder.encode(extractFileName(s3Object.getKey()), StandardCharsets.UTF_8))
+        .build();
+response.setHeader(HttpHeaders.CONTENT_DISPOSITION, contentDisposition.toString());
+response.setStatus(HttpServletResponse.SC_OK);
+response.setContentType(MediaType.APPLICATION_OCTET_STREAM_VALUE);
+```
+
+- **Content-Disposition**: `attachment`로 설정하여 **파일이 다운로드되도록** 지정합니다. 브라우저에서 파일을 직접 열지 않고 다운로드 창이 뜨게 됩니다.
+  - **파일명 설정**: `extractFileName(s3Object.getKey())`를 사용해 파일의 이름을 추출하고, **URL 인코딩**을 통해 특수 문자가 포함된 파일 이름도 문제가 없도록 처리합니다.
+- **Content-Type** **설정**: `application/octet-stream`으로 MIME 타입을 설정합니다. 이 타입은 **일반적인 바이너리 파일**임을 나타내며, 이를 통해 브라우저가 파일을 다운로드할 수 있도록 유도합니다.
+
+#### 4. 파일 데이터를 응답으로 보내기
+
+```java
+response.getOutputStream().write(buffer);
+response.getOutputStream().flush();
+```
+
+- **파일 데이터 쓰기**: `response.getOutputStream().write(buffer)`를 사용해 파일 데이터를 HTTP 응답의 **출력 스트림**에 씁니다. 이를 통해 파일이 클라이언트(브라우저) 쪽으로 전달됩니다.
+- **flush()**: `flush()`를 사용해 **버퍼에 남아 있는 데이터**를 강제로 출력합니다. 이로 인해 데이터가 제대로 전송됩니다.
+
+### zip 파일 다운로드
+
+전체코드
+
+```java
+public void setZipFileDownload(HttpServletResponse response, String bucketName, List<String> keyNameList) throws IOException, AmazonS3Exception {
+    // 1. ZIP 파일 이름을 생성
+    class ZipFileNameGenerator {
+        public static String getZipFileName() {
+            return String.format(
+                    "파일 다운로드 이름", LocalDateTime.now(ZoneId.of("Asia/Seoul")).format(DateTimeFormatter.ISO_DATE)
+            ) + ".zip";
+        }
+    }
+
+    // 2. 응답 헤더 설정
+    ContentDisposition contentDisposition = ContentDisposition.builder("attachment")
+            .filename(URLEncoder.encode(ZipFileNameGenerator.getZipFileName(), StandardCharsets.UTF_8))
+            .build();
+    response.setHeader(HttpHeaders.CONTENT_DISPOSITION, contentDisposition.toString());
+    response.setStatus(HttpServletResponse.SC_OK);
+    response.setContentType(MediaType.APPLICATION_OCTET_STREAM_VALUE);
+
+    // 3. ZIP 파일 생성
+    try (ZipOutputStream zipOutputStream = new ZipOutputStream(response.getOutputStream())) {
+        for (String keyName : keyNameList) {
+            try (S3Object s3Object = amazonS3.getObject(bucketName, keyName)) {
+                ZipEntry zipEntry = new ZipEntry(extractFileName(s3Object.getKey()));
+                zipOutputStream.putNextEntry(zipEntry);
+                byte[] buffer = new byte[INPUT_STREAM_BUFFER_SIZE];
+                int bytesRead;
+                while ((bytesRead = s3Object.getObjectContent().read(buffer)) != -1) {
+                    zipOutputStream.write(buffer, 0, bytesRead);
+                }
+
+                zipOutputStream.closeEntry();
+            }
+        }
+    }
+}
+```
+
+#### 1. ZIP 파일 이름을 생성
+
+ZIP 파일을 다운로드할 때 사용자에게 제공할 파일 이름을 설정하는 부분입니다. `ZipFileNameGenerator` 클래스는 ZIP 파일의 이름을 생성하는 역할을 합니다.
+
+- `LocalDateTime.now(ZoneId.of("Asia/Seoul"))`를 사용해 현재 시간을 기준으로 파일 이름을 생성합니다.
+- 생성된 파일 이름 끝에 `.zip`을 붙여 ZIP 형식임을 명확히 합니다.
+
+#### 2. 응답 헤더 설정
+
+사용자가 파일을 다운로드할 때, HTTP 응답 헤더를 통해 파일이 어떻게 처리될지를 클라이언트에게 알려줍니다.
+
+- `Content-Disposition`: 파일을 다운로드하도록 설정합니다. `attachment`로 설정하면 브라우저가 파일을 직접 열지 않고 다운로드 창을 띄우게 됩니다.
+
+  - `URLEncoder.encode()`를 사용하여 파일 이름에 특수 문자가 있을 때도 문제없이 처리할 수 있도록 합니다.
+
+- `Content-Type`: MIME 타입을 `application/octet-stream`으로 설정하여 PDF, HWP 등 다양한 파일 형식을 일반적인 바이너리 데이터로 처리하여 다운로드 할 수 있도록 했습니다.
+
+#### 3. ZIP 파일 생성
+
+ZIP 파일을 생성하고 S3에서 가져온 여러 파일을 묶어서 하나의 ZIP 파일에 추가하는 부분입니다.
+
+- `ZipOutputStream` 생성: `ZipOutputStream`을 사용하여 ZIP 파일을 생성합니다. HTTP 응답의 출력 스트림을 사용해 생성하기 때문에 사용자가 다운로드할 수 있는 형태로 압축 파일이 만들어집니다.
+- 파일 목록 순회: `keyNameList`에 있는 파일들을 순회하며 하나씩 ZIP 파일에 추가합니다.
+  - S3에서 파일 가져오기: `amazonS3.getObject(bucketName, keyName)`을 사용하여 S3에서 파일을 가져옵니다. 여기서 가져온 파일은 `S3Object` 형태로 반환됩니다.
+  - ZIP 엔트리 생성: 각 파일을 ZIP 파일에 추가하기 위해 `ZipEntry`를 생성합니다. `extractFileName()` 메서드를 사용하여 파일 경로에서 파일 이름만 추출하고, 이를 새로운 ZIP 엔트리로 추가합니다.
+
+**파일 내용을 읽어 ZIP에 쓰기**
+
+```java
+byte[] buffer = new byte[INPUT_STREAM_BUFFER_SIZE];
+int bytesRead;
+while ((bytesRead = s3Object.getObjectContent().read(buffer)) != -1) {
+    zipOutputStream.write(buffer, 0, bytesRead);
+}
+```
+
+- 파일의 내용을 읽어올 버퍼를 생성합니다. `INPUT_STREAM_BUFFER_SIZE`는 버퍼의 크기를 나타내며, 일반적으로 적당한 크기의 상수로 정의됩니다.
+- S3 객체의 내용을 버퍼에 읽어오고, ZIP 출력 스트림에 작성합니다. 이 과정을 파일의 끝까지(`bytesRead == -1`) 반복하여 모든 데이터를 ZIP 파일에 추가합니다.
+
+## 프리사인을 이용한 S3 다운로드
+
+로그인하지 않은 사용자나 모든 사람에게 S3에 저장된 파일을 제공해야 할 때가 있습니다. 이때 S3의 기존 링크를 그대로 사용하면 보안에 문제가 있을 수 있습니다. 그래서 특정 시간 동안만 해당 링크에 접근하여 다운로드할 수 있도록 **프리사인 URL**을 사용하게 되었습니다.
+
+```java
+public String createPresignedGetUrl(String bucketName, String keyName, Long expTimeMillis) {
+    Date expiration = new Date();
+    expiration.setTime(expTimeMillis);
+
+    GeneratePresignedUrlRequest request = new GeneratePresignedUrlRequest(bucketName, keyName)
+            .withMethod(HttpMethod.GET)
+            .withExpiration(expiration);
+
+    return amazonS3.generatePresignedUrl(request).toString();
+}
+```
+
+#### 프리사인 URL 생성 과정
+
+- **유효 기간 설정**: 프리사인 URL은 특정 시간 동안만 유효하도록 설정할 수 있습니다. `expTimeMillis`를 통해 만료 시간을 설정하고, 이를 `Date` 객체의 만료 시간으로 지정합니다. 이렇게 설정된 시간 이후에는 생성된 URL을 사용할 수 없게 되어 보안성을 높일 수 있습니다.
+- **프리사인 URL 요청 생성**: `GeneratePresignedUrlRequest`를 통해 S3 버킷과 객체 키를 지정하고, GET 메서드를 사용할 수 있는 프리사인 URL을 요청합니다. `withMethod(HttpMethod.GET)`은 생성된 URL을 통해 파일을 다운로드할 수 있도록 지정합니다.
+- **URL 반환**: `amazonS3.generatePresignedUrl(request)`를 사용해 생성된 URL을 문자열로 반환합니다. 이 URL은 특정 시간 동안만 유효하며, 이를 사용해 파일을 안전하게 다운로드할 수 있습니다.
