@@ -1,0 +1,128 @@
+---
+title: '중복 없는 쿠폰 코드 생성하기'
+date: 2024-05-15 16:21:13
+tags: ['spring']
+draft: false
+summary: 고유한 쿠폰 코드 12자리를 만들어야 하는 상황이 생겼습니다.
+---
+
+## 무엇을?
+
+고유한 쿠폰 코드 12자리를 만들어야 하는 상황이 생겼습니다.
+
+앞으로 다양한 외부 협력사와 협업 예정이며 마케팅 팀에서 더 많은 사용자를 확보하기 위해 쿠폰을 많이 사용할 예정이라고 하였습니다.
+
+최종적으로 나온 기획안에서는 12자리의 쿠폰 코드를 생성하기로 하였습니다. 최소 3만개 이상의 코드를 만들어야 하기 때문에 중복이 생기지 않게 만드는 게 중요한데 어떤 조합을 어떻게 만들지 고민이 되었습니다. 숫자와 대,소문자를 조합하여 만들 수 있지만, 대소문자를 구별하여 입력하는 게 불편할 거 같아 1-9까지의 숫자와 대문자 알파벳만으로 조합하여 쿠폰 코드를 생성하기로 하였습니다.
+
+생성은 어떻게든 할 수 있지만 이 생성한 **쿠폰 코드는 반드시 고유**해야 한다는 조건이 있습니다. 처음 든 생각은 쿠폰을 생성할 때마다 데이터베이스에서 중복된 코드가 있는지 확인하는 방법인데 이 방법은 성능상 너무 좋지 않을 거 같아 다른 방법을 생각했습니다.
+
+다음으로 생각한 것은 고유한 ID 값 기반으로 코드를 생성하는 것입니다. 데이터베이스에서 이미 발급된 각 쿠폰 코드에 PK 값이 있기 때문에 중북 되지 않고 고유한 PK 값 기준으로 값을 변환한 후 랜덤 값을 추가하여 코드를 구현하기로 하였습니다.
+
+## 어떻게 만들었는가?
+
+간단하게 말하면 아스키 패턴을 이용하여 숫자와 대문자를 조합하여 만들었습니다.
+아래 코드를 보면서 천천히 알아보겠습니다.
+
+```java
+public class CodeGenerator {
+    private static final String asciiPattern = "ABCDEFGHIJKL";
+
+    public static String generateCodeById(Long id) {
+        Random random = new Random();
+        StringBuilder stringBuilder = new StringBuilder();
+
+        for (int i = 0; i < 12; i++) {
+	        // 1. 숫자 추출 및 변환
+            long number = (id / (long) Math.pow(10, i)) % 10;
+            // 2. 랜덤 요소 추가
+            if (random.nextBoolean()) { // 2번
+                stringBuilder.append(number);
+                continue;
+            }
+			 // 3. ASCII 패턴 사용
+            long asciiCode = number + asciiPattern.charAt(i);
+            if (asciiCode > 90) {
+                asciiCode = asciiCode - 26;
+            }
+            stringBuilder.append((char) asciiCode);
+        }
+
+        return stringBuilder.toString();
+    }
+```
+
+#### 1. 숫자 추출 및 변환
+
+```java
+long number = (id / (long) Math.pow(10, i)) % 10;
+```
+
+`id` 값을 이용하여 12자리 코드 번호에서 각 자릿수를 추출하기 위해 사용합니다. 위 코드는 `id`를 10의 거듭제곱으로 나누어 특정 자릿수의 값을 가져오는 방식입니다.
+
+예를 들어, `i`가 0일 때는 1의 자릿수, `i`가 1일 때는 10의 자릿수, `i`가 2일 때는 100의 자릿수를 추출하는 식입니다. 이 과정을 통해 `id`의 각 자릿수를 오른쪽에서부터 하나씩 순차적으로 추출할 수 있습니다. 추출된 숫자는 이후 랜덤하게 그대로 사용되거나, 대문자 알파벳으로 변환됩니다. `id`가 123456일 경우 `i`가 0일 때는 6, `i`가 1일 때는 5, `i`가 2일 때는 4를 추출하게 됩니다.
+
+여기서 `id`는 고유해야 하기 때문에 쿠폰 코드 생성 전 데이터베이스에서 최근 쿠폰 코드의 **PK 값**을 가져와서 id 값으로 사용하였습니다.
+
+#### 2. 랜덤한 요소 추가
+
+`Random` 객체를 이용하여 각 자리마다 숫자를 그대로 사용할지, 아니면 대문자로 변환할지를 랜덤하게 결정합니다. 이로 인해 동일한 ID 값이라도 각기 다른 코드가 생성될 수 있습니다.
+
+```java
+Random random = new Random();
+if (random.nextBoolean()) {
+    stringBuilder.append(number);
+    continue;
+}
+```
+
+위 코드에서 `random.nextBoolean()` 메서드를 사용해 true 또는 false 값을 랜덤하게 생성하고, true일 경우 숫자를 그대로 사용합니다.
+
+#### 3. ASCII 패턴 사용
+
+`asciiPattern` 문자열을 이용하여 숫자를 대문자 알파벳으로 변환합니다. 예를 들어, 숫자 5에 대해 `asciiPattern`의 해당 위치 문자를 더하여 대문자로 변환합니다. 이 방식으로 숫자와 문자가 혼합된 고유한 코드를 생성할 수 있습니다. `asciiPattern.charAt(i)`를 통해 현재 반복의 위치에 해당하는 알파벳을 가져와 숫자와 더하여 새로운 ASCII 값을 만듭니다.
+
+```java
+long asciiCode = number + asciiPattern.charAt(i);
+```
+
+> 자바에서 문자는 `char` 타입으로 취급되며, `char`는 숫자로도 다룰 수 있습니다. `char` 값을 숫자와 더하거나 연산하면, 이 문자의 아스키 코드 숫자 값으로 연산이 이루어집니다.
+
+```java
+if (asciiCode > 90) {
+    asciiCode = asciiCode - 26;
+}
+```
+
+변환된 ASCII 값이 'Z'(90)을 넘어갈 경우, `asciiCode = asciiCode - 26`을 통해 항상 대문자 알파벳이 유지되도록 하기 위해 추가하였습니다. 즉 변환된 ASCII 값이 'Z'를 넘어갈 경우 다시 'A'로 돌아오도록 하기 위함입니다.
+
+## 결과는?
+
+코드를 구성하는 각 자리는 **숫자 10개(0~9)** 와 **대문자 알파벳 26개(A-Z)** 중 하나로 채워집니다. 한자리에서 선택할 수 있는 경우의 수는 10 + 26 = 36 가지가 있습니다. 코드가 12자리로 구성되어 있으니 각 자리에 36가지의 선택지를 가질 수 있는 상황이 12번 반복된다고 생각하면 약 4000조가 넘게 생성이 가능합니다. 또한 고유한 ID 값 기준으로 생성이 되니 쿠폰 코드의 중복 걱정과 총개수에 문제없이 생성이 가능합니다.
+
+쿠폰 코드를 대량으로 발급하는 상황에서도 속도 저하 없이 데이터베이스에 `INSERT`를 하기 위해 `JdbcTemplate`를 활용하여 벌크 인서트를 사용하였습니다.
+
+```java
+private final int defaultBatchSize = 10000;
+private final JdbcTemplate jdbcTemplate;
+
+public void saveAll(List<CouponCode> couponCodeList) {
+    String sql = "INSERT INTO coupon_code (coupon_id, client, code, is_registered, created_at, updated_at, expired_at) "
+            + "VALUES (?, ?, ?, ?, ?, ?, ?)";
+
+    jdbcTemplate.batchUpdate(
+            sql,
+            couponCodeList,
+            defaultBatchSize,
+            (PreparedStatement ps, CouponCode couponCode) -> {
+                ps.setLong(1, couponCode.getCouponId());
+                ps.setString(2, couponCode.getClient().getCode());
+                ps.setString(3, couponCode.getCode());
+                ps.setBoolean(4, couponCode.getIsRegistered());
+                ps.setTimestamp(5, java.sql.Timestamp.valueOf(LocalDateTime.now(ZoneId.of("Asia/Seoul"))));
+                ps.setTimestamp(6, java.sql.Timestamp.valueOf(LocalDateTime.now(ZoneId.of("Asia/Seoul"))));
+                ps.setTimestamp(7, java.sql.Timestamp.valueOf(couponCode.getExpiredAt()));
+            }
+    );
+
+}
+```
