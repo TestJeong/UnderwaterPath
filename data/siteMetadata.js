@@ -4,15 +4,15 @@ const siteMetadata = {
   author: 'green turtle',
   headerTitle: 'Underwater Path',
   description: '듣고, 읽고, 배운 것을 기록하며 성장하는 공간입니다 🍀',
-  language: 'en-us',
+  language: 'ko-KR',
   theme: 'system', // system, dark or light
-  siteUrl: 'https://tailwind-nextjs-starter-blog.vercel.app',
-  siteRepo: 'https://github.com/timlrx/tailwind-nextjs-starter-blog',
+  siteUrl: 'https://underwater-path.vercel.app/',
+  // siteRepo: 'https://github.com/timlrx/tailwind-nextjs-starter-blog',
   siteLogo: '/static/images/logo.png',
   socialBanner: '/static/images/twitter-card.png',
-  mastodon: 'https://mastodon.social/@mastodonuser',
+  // mastodon: 'https://mastodon.social/@mastodonuser',
   email: 'jyunj3015@gmail.com',
-  github: 'https://github.com',
+  github: 'https://github.com/TestJeong',
   locale: 'ko-KR',
   analytics: {
     // If you want to use an analytics provider you have to add it to the
