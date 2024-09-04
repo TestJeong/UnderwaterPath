@@ -1,0 +1,278 @@
+---
+title: '쿠폰 시스템에서 알아보는 분산락'
+date: 2024-08-04 16:21:13
+tags: ['spring']
+draft: false
+summary: 여러 컴퓨터나 서버가 동시에 같은 자원에 접근하려 할 때 이를 제어하기 위해 자원에 락을 거는 방법입니다. 여러 컴퓨터 사이에서 자원 접근을 조율하여 동시에 하나의 자원을 쓰지 못하게 순서를 정해주는 장치라고 생각하면 됩니다.
+---
+
+현재 서비스에서 쿠폰 도메인이 있는데 이 부분이 동시성 제어를 위해 분산락이 적용되어 있는 상태라 평소 동시성 제어에 대해 관심이 있는 터라 분산락에 대해 공부를 하였습니다.
+
+## 분산락이란?
+여러 컴퓨터나 서버가 동시에 같은 자원에 접근하려 할 때 이를 제어하기 위해 자원에 락을 거는 방법입니다. 여러 컴퓨터 사이에서 자원 접근을 조율하여 동시에 하나의 자원을 쓰지 못하게 순서를 정해주는 장치라고 생각하면 됩니다.
+
+조금 어렵게 말하면 락을 획득한 프로세스 혹은 스레드만이 공유 자원 혹은 임계 구역(Critical Section)에 접근할 수 있도록 하는 것입니다.
+
+>임계 영역이란?
+>한 번에 하나의 프로세스만 액세스할 수 있는 코드 영역을 말합니다.
+
+분산락을 구현하기 위해서는 락에 대한 상태를 저장할 공간이 필요하며, 이 공간은 모든 서버가 접근할 수 있는 중앙 저장소여야 합니다.
+
+서버는 자원에 접근하기 전에 **반드시 락을 획득**해야 하며, 이는 해당 자원을 사용하는 동안 다른 서버가 접근하지 못하도록 합니다. **한 서버가 락을 획득한 동안 다른 서버들은 락이 해제될 때까지 대기**해야 하며 이 대기 상태는 주기적으로 락을 재시도하는 방식으로 구현할 수 있습니다.
+
+자원 사용이 끝나면 **서버는 락을 해제하여 다른 서버가 자원에 접근**할 수 있도록 합니다.
+
+아래 그림처럼 여러서버 공유자원에 접근하려고 할 때 하나씩 락을 획득할 수 있으며 공유자원에 접근할 때는 반드시 락을 획득한 상태에서 접근할 수 있습니다.
+
+![](https://velog.velcdn.com/images/a01021039107/post/f1790e65-6596-4678-b053-7f3c465cebf7/image.png)
+
+## 그렇다면 비관적 락과 분산락의 차이점은?
+#### 비관적 락
+데이터베이스 자체에서 락을 관리하다 보니 데이터 일관성을 보장할 수 있습니다. 그리고 동일한 데이터베이스를 사용하는 여러 서버간의 동시성 문제를 해결할 수 있습니다.
+
+트랜잭션이 시작될 때 **특정 행 또는 테이블에 대해 락을 획득**하고 **트랜잭션이 종료될 때 락을 해제**하여 이 동안 다른 트랜잭션은 해당 자원에 접근할 수 없어 동시성 문제를 해결할 수 있습니다. 단점으로 트랜잭션이 길어질수록 다른 트랜잭션이 대기해야 하므로 성능 저하가 발생할 수 있으며 외래키가 걸린 테이블에 비관적 락을 사용하는 경우 데드락이 발생할 수 있습니다.
+
+왜 발생하는지 궁금하다면 아래 글을 한번 보는것을 추천드립니다. [링크](https://underwater-path.vercel.app/blog/DB/concurrencyLock#데드락-발생-위험)
+
+#### 분산락
+여러 서버가 자원을 공유하는 분산 시스템에서 락을 관리합니다. 중앙 저장소를 사용하여 락을 관리하기 때문에 분산 환경(다중 데이터베이스, 다중 서버)에서도 데이터 일관성을 보장할 수 있습니다. 하지만 중앙 저장소를 사용해야 하기 때문에 비용이 발생하며 네트워크를 통한 락 관리 때문에 네트워크 지연이나 병목 형상이 발생하여 락 획득, 해제에 문제가 있을 수 있습니다.
+
+### 쿠폰 시스템에서 바라본 비관적 락과 분산 락의 차이점
+
+비관적 락을 사용할 때, 쿠폰 시스템은 데이터베이스에 직접 락을 걸어 특정 쿠폰 코드의 사용을 관리합니다. 예를 들어, 한 서버가 쿠폰 코드를 사용 처리하려 할 때, 데이터베이스에 해당 쿠폰 코드를 '잠금' 상태로 만듭니다. 이렇게 하면, 다른 서버가 같은 쿠폰 코드에 동시에 접근하려 해도, 데이터베이스가 락을 걸어 놓았기 때문에 접근을 허용하지 않습니다. 따라서, 다른 서버들은 첫 번째 서버가 쿠폰 코드 처리를 완료하고 락을 해제할 때까지 기다려야 합니다.
+
+분산 락을 사용하는 경우, 쿠폰 시스템은 여러 서버가 데이터베이스에 동시에 접근할 수 있도록 설계됩니다. 이 방법에서는, 여러 서버가 쿠폰 코드를 사용하려 할 때, 중앙의 락 관리 시스템이 각 요청을 조정하여 데이터베이스에서 충돌이 발생하지 않도록 합니다. 이렇게 하면 여러 서버가 동시에 쿠폰 코드 처리를 진행할 수 있어 시스템의 처리 능력과 확장성이 크게 향상됩니다. 하지만, 네트워크 지연이나 락 경쟁과 같은 문제가 발생할 수 있어, 이를 고려한 설계가 필요합니다.
+
+요약하자면 비관적 락과 분산 락 모두 데이터 일관성을 지켜주며 동시성 제어가 가능한데 주요 차이점은 락을 어디서 관리하느냐와 어떤 환경에서 사용되느냐에 있습니다. 
+
+**비관적 락**은 공유락, 배타락을 활용하여 테이블, 레코드와 같은 공유자원에 락을 거는 DB 락의 방식이며 주로 단일 데이터베이스 시스템 내에서 사용됩니다. 데이터베이스 내에서만 동작하는 트랜잭션들이 서로의 접근을 제어할 수 있습니다.
+
+**분산 락**은 공유자원 자체에 락을 거는 것이 아니라, 여러 서버가 동시에 접근하려는 **임계 구역**에 대해 락을 거는 방식을 말합니다. 여러 서버가 자원을 분산해서 사용하는 환경에서 주로 사용합니다. 
+
+예를 들어 마이크로 서비스에서 여러 서비스가 같은 자원을 사용하는 경우 이 자원을 안전하게 관리하기 위해 사용할 수 있으며 데이터베이스에 있는 자원뿐만 아니라 캐시나, 파일 시스템 등 다른 자원에 대해서도 락을 적용할 수 있습니다.
+
+## 어떻게 구현을 하였을까?
+스프링 부트에서 Redis를 이용하여 분산락을 구현하는 라이브러리는 크게 2가지가 있습니다 Lettuce,  Redisson에 대해 알아보겠습니다.
+### Lettuce
+Lettuce는 공식적으로 분산락 기능을 제공하지 않습니다. 따라서 직접 구현해서 사용해야 하는데 대표적으로 `SETNX` 를 이용하여 구현합니다.
+
+`SETNX`는 `SET if Not eXit` 의 줄임말로, 특정 키가 존재하지 않을 때만 해당 키에 값을 설정합니다. 키가 이미 존재한다면 아무 작업도 하지 않고, 새로운 키를 설정할 수 있을 때만 성공적으로 값을 설정합니다. 즉 키값이 존재하지 않으면 락을 획득하는 효과를 낼 수 있습니다.
+
+![](/static/images/spring/distributelock1.png)
+
+`Lettuce`의 락 획득 방식은 락을 획득하지 못한 경우 락을 획득하기 위해 Redis에 계속해서 요청을  보내는 **스핀락(spin lock)** 으로 구성되어 있다. 이 스핀 락 방식은 계속해서 요청을 보내는 방식으로 인해 redis에 부하가 생길 수 있다는 단점이 있습니다.
+
+이를 해결하는 방법으로 락 획득에 실패한 클라이언트에게 다음 시도까지 sleep time을 주어 일정 시간 대기하도록 하거나 또는 timeout을 설정하여 일정 시간 지나면 에러를 발생시켜 락 획득을 중지하는 방법으로 레디스에 부하가 생기는 것을 방지 할 수 있습니다.
+
+아래 예시 코드 입니다.
+
+```java
+public class RedisLockService {
+
+    private final RedisTemplate<String, String> redisTemplate;
+
+    public RedisLockService(RedisTemplate<String, String> redisTemplate) {
+        this.redisTemplate = redisTemplate;
+    }
+// 특정 키에 대한 락을 획득하려고 시도하는 메서드
+// 락을 성공적으로 획득하면 true, 모든 시도가 실패하면 false를 반환
+    public boolean acquireLock(String lockKey, String value, long expireTime, int retryCount, long sleepTime) {
+        ValueOperations<String, String> ops = redisTemplate.opsForValue();
+        
+        // 스핀락: 설정된 재시도 횟수만큼 락 획득 시도
+        return IntStream.range(0, retryCount)
+                .filter(i -> tryLock(ops, lockKey, value, expireTime))
+                .peek(i -> sleep(sleepTime)) // 실패 시 sleep 적용
+                .findFirst()
+                .isPresent();
+    }
+// 락 획득 시도하는 메서드 
+    private boolean tryLock(ValueOperations<String, String> ops, String lockKey, String value, long expireTime) {
+        // 다른 스레드에서 잘못된 해제를 방지하기 위해 자신이 설정한 값과 동일한지 확인 한 후 락 해제
+        return Boolean.TRUE.equals(ops.setIfAbsent(lockKey, value, expireTime, TimeUnit.SECONDS));
+    }
+
+// 락 해제 시도하는 메서드
+    public void releaseLock(String lockKey, String value) {
+        ValueOperations<String, String> ops = redisTemplate.opsForValue();
+        String currentValue = ops.get(lockKey);
+        if (value.equals(currentValue)) {
+            redisTemplate.delete(lockKey);
+        }
+    }
+
+// 락 획득 시도간에 일정 시간을 대기하게 만드는 메서드
+    private void sleep(long sleepTime) {
+        try {
+            Thread.sleep(sleepTime);
+        } catch (InterruptedException e) {
+	        // 현재 스레드의 interrupt 상태를 복구
+            Thread.currentThread().interrupt(); 
+        }
+    }
+}
+
+```
+
+>ValueOperations란?<br/>
+>Spring Data Redis에서 제공하는 인터페이스로, Redis에서 단일 값에 대한 여러 가지 작업을 수행할 수 있는 기능을 제공합니다. `set(key, value), get(key),setIfAbsent(key, value)` 등 Redis의 데이터 구조 중 "String" 타입에 해당하는 데이터를 조작할 때 주로 사용됩니다
+
+### Redisson
+`Redisson`은 락 획득 시 스핀 락 방식이 아닌 **pub/sub** 방식을 이용하며 Lock 획득 및 재시도 기능이 구현되어 있습니다.
+
+Pub/Sub 구조로 레디스에서 락을 해제하게 되면 대기 중인 클라이언트에게 알림을 주어 다시 락을 획득하도록 신호를 줍니다 신호를 받은 클라이언트는 대기 상태에서 벗어나 다시 락 획득을 시도합니다. `Redisson client` 는 이러한 작업을 타임아웃이 될 때까지 반복합니다.
+
+![](/static/images/spring/distributelock2.png)
+
+아래는 예시 코드이며 AOP를 이용하여 구현하였습니다.
+#### 어노테이션 
+```java
+@Target(ElementType.METHOD)              
+@Retention(RetentionPolicy.RUNTIME)     
+public @interface DistributedLock {  
+    String key();  // lock의 이름(고유값)
+    TimeUnit timeUnit() default TimeUnit.SECONDS; //
+    long waitTime() default 5L; // lock 획득을 시도하는 최대 시간(ms) 
+    long leaseTime() default 3L; // lock 획득한 후, 점유하는 최대 시간(ms)
+}
+```
+
+#### 분산락
+```java
+@Aspect
+@Component
+@RequiredArgsConstructor
+public class DistributedLockAspect {
+	private static final String REDISSON_LOCK_PREFIX = "LOCK_KEY:";
+    private final RedissonClient redissonClient;
+
+    @Around("@annotation(distributedLock)")
+    public Object around(ProceedingJoinPoint joinPoint) throws Throwable {
+    
+        String lockKey = REDISSON_LOCK_PREFIX;
+        DistributedLock lock = method.getAnnotation(DistributedLock.class);
+        RLock lock = redissonClient.getLock(lockKey);
+
+		// 락이 성공적으로 획득했는지 여부를 확인하는 용도
+        boolean acquired = false;
+        
+        try {
+            acquired = lock.tryLock(lock.waitTime(), lock.leaseTime(), lock.timeUnit());
+            if (acquired) {
+                // 락 획득 성공 시, 대상 메서드 실행
+                return joinPoint.proceed();
+            } else {
+                // 락 획득 실패 시, 필요한 예외 처리 또는 대체 로직
+                throw new IllegalStateException("Lock acquisition failed.");
+            }
+        } finally {
+            // 락 해제
+            if (acquired && lock.isHeldByCurrentThread()) {
+                lock.unlock();
+            }
+        }
+    }
+}
+```
+
+#### 전체적인 흐름
+1. 대상 메서드에 `@DistributedLock` 어노테이션이 붙어있는 경우 이 애스펙트가 작동합니다.
+2. `lockey`를 기반으로 `RLock` 객체를 생성하고, `tryLock()` 을 사용하여 락을 획득하려고 시도합니다.
+3. 락을 성공적으로 획득한 경우 대상 메서드를 실행합니다.
+4. 대상 메서드 실행 후 또는 예외 발생 시 락을 안전하게 해제합니다
+5. 락을 획득하지 못한 겨우 예외를 발생시켜 처리합니다.
+
+## 테스트 코드로 검증하기
+선착순 쿠폰을 예로 들어서 테스트 코드를 작성해 보겠습니다. 100장의 쿠폰이 있으며 선착순으로 쿠폰을 발급한다는 가정을 들겠습니다.
+### 분산락 적용 코드와 적용하지 않은 코드
+```java
+@Service
+@RequiredArgsConstructor
+public class CouponService {
+
+    private final CouponRepository couponRepository;
+
+	@Transactional // 분산락 적용 X
+    public void issueCoupon(Long couponId, Integer quantity) {
+        Coupon coupon = couponRepository.findById(couponId).orElseThrow();
+        coupon.decrease(quantity); // 쿠폰 수량 감소 (변경 감지(dirty checking))
+    }
+
+	@DistributedLock(key = "#couponId") // Redis 분산락 적용 
+	public voidissueCouponWithLock(Long couponId, Integer quantity) { 
+		Coupon coupon = couponRepository.findById(couponId).orElseThrow(); 
+		coupon.decrease(quantity); // 쿠폰 수량 감소 (변경 감지(dirty checking))
+		}
+}
+
+```
+
+### 테스트 코드
+```java
+@Slf4j
+@SpringBootTest
+class CouponServiceTest {
+    private Long COUPON_ID = 1L;
+    private final Integer CONCURRENT_COUNT = 100;
+
+    @Autowired
+    CouponService couponService;
+
+    @Autowired
+    CouponRepository couponRepository;
+
+    @Test
+    @DisplayName("동시에 100명이 쿠폰 발급 : 동시성 문제 발생")
+    public void issueCouponTest() throws Exception {
+        Long originalQuantity = couponRepository.findById(COUPON_ID).orElseThrow().getQuantity();
+
+        ExecutorService executorService = Executors.newFixedThreadPool(100);
+        CountDownLatch latch = new CountDownLatch(CONCURRENT_COUNT);
+
+        for (int i = 0; i < CONCURRENT_COUNT; i++) {
+            executorService.submit(() -> {
+                try {
+                    couponService.issueCoupon(COUPON_ID, 1)
+                } finally {
+                    latch.countDown();
+                }
+            });
+        }
+
+        latch.await();
+
+        Coupon coupon = couponRepository.findById(COUPON_ID).orElseThrow();
+        assertEquals(originalQuantity - CONCURRENT_COUNT, coupon.getQuantity());
+    }
+
+    @Test
+    @DisplayName("동시에 100명이 쿠폰 발급 : 분산락 적용")
+    public void issueCouponWithLockTest() throws Exception {
+		Long originalQuantity = couponRepository.findById(COUPON_ID).orElseThrow().getQuantity();
+
+        ExecutorService executorService = Executors.newFixedThreadPool(100);
+        CountDownLatch latch = new CountDownLatch(CONCURRENT_COUNT);
+
+        for (int i = 0; i < CONCURRENT_COUNT; i++) {
+            executorService.submit(() -> {
+                try {
+                    couponService.issueCouponWithLock(COUPON_ID, 1)
+                } finally {
+                    latch.countDown();
+                }
+            });
+        }
+
+        latch.await();
+
+        Coupon coupon = couponRepository.findById(COUPON_ID).orElseThrow();
+        assertEquals(originalQuantity - CONCURRENT_COUNT, coupon.getQuantity());
+    }
+}
+```
+
+
+### 결과
+![](/static/images/spring/distributelock3.png)
+
+분산락이 적용된 테스트 코드에서는 문제없이 100명의 동시 요청에도 100개가 정상 차감되었지만 분산락이 적용되지 않은 코드에서는 100명이 동시에 요청하면 23개만 사라지고 87개가 남는 모습이 보입니다.
