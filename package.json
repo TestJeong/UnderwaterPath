@@ -5,6 +5,7 @@
   "scripts": {
     "start": "next dev",
     "dev": "cross-env INIT_CWD=$PWD next dev",
+    "postbuild": "next-sitemap",
     "build": "cross-env INIT_CWD=$PWD next build && cross-env NODE_OPTIONS='--experimental-json-modules' node ./scripts/postbuild.mjs",
     "serve": "next start",
     "analyze": "cross-env ANALYZE=true next build",
@@ -25,6 +26,7 @@
     "image-size": "1.0.0",
     "next": "14.2.3",
     "next-contentlayer2": "0.4.6",
+    "next-sitemap": "^4.2.3",
     "next-themes": "^0.3.0",
     "pliny": "0.2.1",
     "postcss": "^8.4.24",

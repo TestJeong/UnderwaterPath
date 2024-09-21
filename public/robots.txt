@@ -1,0 +1,9 @@
+# *
+User-agent: *
+Allow: /
+
+# Host
+Host: https://underwater-path.vercel.app/
+
+# Sitemaps
+Sitemap: https://underwater-path.vercel.app/sitemap.xml
