@@ -7,13 +7,4 @@ module.exports = {
     changefreq: "daily",
     priority: 1,
     exclude: [],
-    robotsTxtOptions: {
-      policies: [
-        {
-          userAgent: "*",
-          allow: "/",
-          disallow: [],
-        },
-      ],
-    },
   };
