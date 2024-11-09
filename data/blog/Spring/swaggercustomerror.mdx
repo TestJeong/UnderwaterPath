@@ -1,0 +1,194 @@
+---
+title: 'Swagger에서 하나의 HTTP 상태 코드로 여러 커스텀 에러 메시지 관리하기'
+date: 2024-06-22 16:21:13
+tags: ['spring']
+draft: false
+summary: Swagger 문서화를 자동화하기 위해 커스텀 어노테이션과 Swagger 설정을 수정하여 더 효율적인 방식을 도입했습니다.
+---
+
+최근 커스텀 예외 처리를 개발한 후, Swagger에 예외 응답을 문서화해야 하는 일이 많아졌습니다. 기존에는 각 에러 메시지와 에러 코드를 Swagger에 수작업으로 입력해야 했습니다. 특히 **같은 HTTP 상태 코드(예: 400 Bad Request)에 여러 개의 커스텀 에러 코드와 메시지를 추가해야 할 때** 문제가 있었습니다.
+
+Swagger에서는 동일한 HTTP 상태 코드에 여러 메시지를 추가하면 첫 번째 것만 표시되기 때문에, 각각의 에러 상황을 명확하게 표현하기가 쉽지 않았습니다. 예를 들어, 아래와 같은 코드에서는 두 개의 400 상태 코드에 대해 다른 메시지를 정의하려고 했지만, Swagger 문서에는 첫 번째 메시지만 출력되었습니다.
+
+```java
+@ApiOperation(value = "쿠폰 코드 저장")
+@ApiResponses(value = {
+    @ApiResponse(code = 400, message = "존재하지 않는 쿠폰입니다.", response = UserCouponException.class),
+    @ApiResponse(code = 400, message = "존재하지 않는 쿠폰 코드 입니다.", response = UserCouponException.class)
+})
+```
+
+이런 문제를 해결하고 Swagger 문서화를 자동화하기 위해 커스텀 어노테이션과 Swagger 설정을 수정하여 더 효율적인 방식을 도입했습니다.
+
+## 문제 해결
+
+### 1. 커스텀 어노테이션 생성
+
+우선, Swagger에서 사용할 커스텀 어노테이션을 두개 만듭니다. 이 어노테이션을 사용하여, 해당 API가 어떤 커스텀 에러 코드와 메시지를 가질 수 있는지 쉽게 명시할 수 있습니다.
+
+```java
+@Target(ElementType.METHOD)
+@Retention(RetentionPolicy.RUNTIME)
+public @interface ApiErrorCodeExamples {
+    EnumExceptionMapping[] value();
+}
+```
+
+```java
+@Target(ElementType.METHOD)
+@Retention(RetentionPolicy.RUNTIME)
+public @interface EnumExceptionMapping {
+    Class<? extends Enum<?>> enumClass();
+    String[] values();
+}
+```
+
+`@ApiErrorCodeExamples` 어노테이션은 API 메서드에 적용되어, 해당 메서드가 어떤 에러 코드 목록(enum)을 사용하는지 명시합니다.
+
+Swagger가 이 커스텀 어노테이션을 사용할 수 있도록 설정을 추가했습니다. `SwaggerConfig` 파일에서 `customizer()` 메서드를 통해 `@ApiErrorCodeExamples` 어노테이션이 붙은 메서드를 찾아, 해당 메서드의 예외 응답 예시를 자동으로 추가하도록 하였습니다.
+
+```java
+public static OperationCustomizer customizer() {
+    return (Operation operation, HandlerMethod handlerMethod) -> {
+        ApiErrorCodeExamples apiErrorCodeExamples = handlerMethod.getMethodAnnotation(ApiErrorCodeExamples.class);
+
+        if (apiErrorCodeExamples != null) {
+            for (EnumExceptionMapping mapping : apiErrorCodeExamples.value()) {
+                generateErrorCodeResponseExample(operation, mapping.enumClass(), mapping.values());
+            }
+        }
+        return operation;
+    };
+}
+```
+
+### 3. 예외 응답 예시 생성: `generateErrorCodeResponseExample()`
+
+이제 실제로 예외 응답 예시를 생성하는 `generateErrorCodeResponseExample()` 메서드는 주어진 **enum 클래스**에 정의된 **에러 코드와 메시지**를 이용해 Swagger 예시 응답을 만들어줍니다.
+
+```java
+private static void generateErrorCodeResponseExample(Operation operation, Class<? extends Enum<?>> enumClass, String[] enumConstants) {
+    ApiResponses responses = operation.getResponses();
+
+    Map<Integer, List<ExampleHolder>> statusWithExampleHolders = Arrays.stream(enumConstants)
+        .map(constantName -> {
+	        // (1)
+            Enum<?> enumConstant = Enum.valueOf(enumClass.asSubclass(Enum.class), constantName);
+
+            if (enumConstant instanceof DomainException domainException) {
+                // (2)
+                AbstractHttpException httpStatus = HttpExceptionCreator.create(domainException);
+                return ExampleHolder.builder()
+                        .holder(getSwaggerExample(domainException)) // (3)
+                        .code(httpStatus.getStatus().value())
+                        .name(domainException.getErrorCode())
+                        .build();
+            }
+            return null;
+        })
+        .filter(Objects::nonNull)
+        .collect(Collectors.groupingBy(ExampleHolder::getCode));
+
+	// (4)
+    addExamplesToResponses(responses, statusWithExampleHolders);
+}
+
+private static Example getSwaggerExample(DomainException errorCode) {
+    SwaggerExceptionExampleDto swaggerExceptionExampleDto = SwaggerExceptionExampleDto.builder()
+            .errorCode(errorCode.getErrorCode())
+            .message(errorCode.getMessage())
+            .build();
+    Example example = new Example();
+    example.setValue(swaggerExceptionExampleDto);
+
+    return example;
+}
+```
+
+```java
+@Getter
+public class SwaggerExceptionExampleDto {
+    private final String errorCode;
+    private final String message;
+
+    @Builder
+    public SwaggerExceptionExampleDto(String errorCode, String message) {
+        this.errorCode = errorCode;
+        this.message = message;
+    }
+}
+```
+
+이 메서드는 주어진 에러 정의 enum에 포함된 상수들을 사용하여 예외 객체를 동적으로 생성하고, 이 객체를 기반으로 Swagger에 표시할 예시 응답을 구성합니다.
+
+1. 먼저 각 **enum 상수**(예: `"COUPON_NOT_FOUND"`)를 통해 해당 예외에 대한 **에러 코드, 메시지** 등의 정보를 추출합니다.
+2. 그런 다음 `HttpExceptionCreator.create()` 메서드를 사용해 **실제 예외 객체**(`NotFoundException`)를 생성합니다. 이 예외 객체는 **HTTP 상태 코드**, **에러 코드**, **메시지**와 같은 정보를 포함합니다.
+3. 그런 다음, `getSwaggerExample()` 메서드를 이용해 예외의 구체적인 정보를 담은 **예시 객체**를 생성하고, 이 예시 객체는 `ExampleHolder`를 통해 관리됩니다. `ExampleHolder`는 예시 응답에 필요한 정보들을 모아서 HTTP 상태 코드별로 그룹화하고 정리해줍니다.
+4. 마지막으로, 이렇게 정리된 예시 응답들은 `addExamplesToResponses()` 메서드를 통해 **Swagger 문서에 추가**됩니다.
+
+### 4. 예시 응답 관리: ExampleHolder 클래스
+
+`ExampleHolder`는 Swagger 문서에 추가할 예시 응답을 관리하기 위한 클래스입니다. 이를 통해 특정HTTP 상태 코드와 연관된 응답을 구조적으로 정리할 수 있습니다. 클래스 내에 포함된 필드들은 각각 다음과 같은 역할을 합니다.
+
+```java
+@Getter
+@Builder
+public class ExampleHolder {
+    private Example holder;
+    private String name;
+    private int code;
+}
+```
+
+**holder(예시 객체)** : 실제 Swagger에서 표시할 응답 예시를 담고 있습니다.
+**name(에러 코드 이름)** : 에러 코드 목록(enum)의 상수값을 나타내며, 예시 응답의 이름을 지정합니다. 주로 에러 코드 식별자로 사용됩니다.
+**code(HTTP 상태 코드)** : 해당 예시 응답과 관련된 HTTP 상태 코드 입니다.
+
+### 5. 예시 응답을 Swagger에 추가: addExamplesToResponses()
+
+마지막으로, 생성된 예시들을 Swagger의 응답(`ApiResponses`)에 추가합니다.
+
+```java
+private static void addExamplesToResponses(ApiResponses responses, Map<Integer, List<ExampleHolder>> statusWithExampleHolders) {
+    statusWithExampleHolders.forEach((statusCode, exampleHolders) -> {
+        ApiResponse apiResponse = Optional.ofNullable(responses.get(String.valueOf(statusCode)))
+                .orElseGet(ApiResponse::new);
+
+        Content content = Optional.ofNullable(apiResponse.getContent())
+                .orElseGet(Content::new);
+
+        MediaType mediaType = Optional.ofNullable(content.get("application/json"))
+                .orElseGet(MediaType::new);
+
+        exampleHolders.forEach(exampleHolder -> {
+            mediaType.addExamples(exampleHolder.getName(), exampleHolder.getHolder());
+        });
+
+        content.addMediaType("application/json", mediaType);
+        apiResponse.setContent(content);
+        responses.addApiResponse(String.valueOf(statusCode), apiResponse);
+    });
+}
+```
+
+### 6. 실제 사용 예시
+
+```java
+@ApiErrorCodeExamples({
+    @EnumExceptionMapping(enumClass = UserCouponException.class, values = {"USER_COUPON_RECALL_UNAVAILABLE","INVALID_STATUS"}),
+    @EnumExceptionMapping(enumClass = UserCouponException.class, values = {"COUPON_NOT_FOUND", "COUPON_CODE_NOT_FOUND"}),
+})
+```
+
+- 각 `@EnumExceptionMapping`은 특정 에러 코드 목록(enum)와 관련된 예외 상수(에러 코드 값)들을 명시하고 있습니다.
+- 예를 들어, `UserCouponException` 클래스의 `"USER_COUPON_RECALL_UNAVAILABLE"`, `"INVALID_STATUS"` 같은 값들은 각각의 예외 상황을 나타내며, API 호출 시 발생할 수 있는 다양한 에러 상태를 설명합니다.
+
+![](/static/images/spring/swaggerhttpstatuscode.png)
+
+위 사진과 같이 Swagger에서 해당 API에 맞는 커스텀 에러 코드를 쉽게 확인할 수 있으며, 하나의 HTTP 상태 코드에 여러 개의 커스텀 에러 코드를 함께 볼 수 있습니다.
+
+## 마무리
+
+프론트엔드 입장에서 Swagger 문서에서 API가 어떤 에러 코드와 메시지를 반환할 수 있는지 쉽게 확인할 수 있어, 문제를 더 빠르게 디버깅하고 정확하게 대처할 수 있게 되었습니다. 백엔드 입장에서도 일일이 Swagger에 커스텀 에러 코드를 추가하지 않아도 되며, 커스텀 어노테이션을 사용해 자동으로 예외 응답 예시가 Swagger 문서에 반영되는 과정이 훨씬 쉬워졌습니다.
+
+또한, 같은 HTTP 상태 코드에 여러 에러 코드와 메시지를 추가할 수 있게 되면서 예외 상황을 더 명확하게 표현할 수 있게 되었습니다. 예를 들어, 400 상태 코드에 대해 다양한 에러 상황을 모두 Swagger에 명확하게 보여줄 수 있습니다.
