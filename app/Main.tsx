@@ -48,7 +48,7 @@ export default function Home({ posts }) {
                             ))}
                           </div>
                         </div>
-                        <div className="prose max-w-none text-gray-500 dark:text-gray-400 mobile:text-sm">
+                        <div className="prose max-w-none text-gray-500 dark:text-gray-400  mobile:text-sm">
                           {summary}
                         </div>
                       </div>
