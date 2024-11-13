@@ -84,7 +84,7 @@ public enum CouponCodeException implements DomainException {
 }
 ```
 
-이 클래스는 **특정 도메인과 관련된 예외 상황**을 정의합니다. 각 상황에 대해 **구체적인 에러 코드와 메시지**를 제공하는데, 예를 들어 `"CCD-001"`이라는 코드와 `"존재하지 않는 쿠폰입니다."`라는 메시지를 가진 예외 (`NotFoundException.class`)가 있습니다.
+이 Enum은 **특정 도메인과 관련된 예외 상황**을 정의합니다. 각 상황에 대해 구체적인 에러 코드와 메시지를 제공합니다. 예를 들어, `CCD-001` 이라는 에러 코드와 함께 **"존재하지 않는 쿠폰입니다."** 라는 메시지를 포함한 커스텀 `NotFoundException` 예외가 있습니다.
 
 이렇게 에러 코드가 어떤 예외 타입인지를 정의하는 이유는 **예외를 더 명확하게 구분하고, 다양한 상황을 정확히 처리**하기 위해서입니다. 예를 들어, 데이터베이스에서 특정 데이터를 찾을 수 없을 때 단순히 `RuntimeException`으로 표현하면 무슨 에러인지 파악하기 어렵습니다. 대신 `NotFoundException` 같은 이름의 예외를 사용하면, 이 상황이 **리소스를 찾을 수 없다는 것을 명확히** 나타내줍니다. 그리고 이 예외에 **HTTP 상태 코드 404 (NOT_FOUND)** 를 지정해 주면, 클라이언트도 이 리소스가 없다는 걸 쉽게 알 수 있습니다.
 
@@ -126,7 +126,6 @@ public class NotFoundException extends AbstractHttpException {
 ```java
 public class HttpExceptionCreator {
     // 동적 예외 생성 메서드
-    @SuppressWarnings("unchecked")
     private static <T> T createInstance(Class<? extends T> clazz, Object... args) {
         Constructor<? extends T>[] constructorArray = (Constructor<? extends T>[]) clazz.getDeclaredConstructors();
         for (Constructor<? extends T> constructor : constructorArray) {
@@ -215,7 +214,7 @@ public class HttpExceptionHandlerFilter extends OncePerRequestFilter {
 {
   "errorCode": "CCD-001",
   "message": "존재하지 않는 쿠폰입니다.",
-  "timeStamp": "2024-11-04T15:45:23"
+  "timeStamp": "2024-06-18T15:45:23"
 }
 ```
 
@@ -312,6 +311,6 @@ public class DiscountCouponService {
 {
   "errorCode": "CCD-001",
   "message": "존재하지 않는 쿠폰입니다.",
-  "timeStamp": "2024-11-04T15:45:23"
+  "timeStamp": "2024-06-18T15:45:23"
 }
 ```

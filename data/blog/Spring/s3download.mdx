@@ -26,7 +26,7 @@ Contet-Type에 application/octet-stream을 사용하여 어떤 파일을 클라�
 
 ### Content-Disposition : attachment;
 
-HTTP 헤더 중 하나로, 웹 서버가 웹 브라우저나 클라이언트에게 파일을 어떻게 처리 해야하는지 알려주는 역할을 합니다. 예를들어 파일을 브라우저에 바로 표시할지 아니면 다운로드를 시도할지 등을 결정 하는 것을 말합니다.
+웹 서버가 웹 브라우저나 클라이언트에게 파일을 어떻게 처리 해야하는지 알려주는 역할을 합니다. 예를들어 파일을 브라우저에 바로 표시할지 아니면 다운로드를 시도할지 등을 결정 하는 것을 말합니다.
 
 Content-Disposition에는 크게 2가지 타입이 있는데 알아보도록 하겠습니다.
 
@@ -111,37 +111,41 @@ response.getOutputStream().flush();
 전체코드
 
 ```java
-public void setZipFileDownload(HttpServletResponse response, String bucketName, List<String> keyNameList) throws IOException, AmazonS3Exception {
-    // 1. ZIP 파일 이름을 생성
-    class ZipFileNameGenerator {
-        public static String getZipFileName() {
-            return String.format(
-                    "파일 다운로드 이름", LocalDateTime.now(ZoneId.of("Asia/Seoul")).format(DateTimeFormatter.ISO_DATE)
-            ) + ".zip";
+public class AmazonS3Util {
+    private final int INPUT_STREAM_BUFFER_SIZE = 2048;
+
+    public void setZipFileDownload(HttpServletResponse response, String bucketName, List<String> keyNameList) throws IOException, AmazonS3Exception {
+        // 1. ZIP 파일 이름을 생성
+        class ZipFileNameGenerator {
+            public static String getZipFileName() {
+                return String.format(
+                        "파일 다운로드 이름", LocalDateTime.now(ZoneId.of("Asia/Seoul")).format(DateTimeFormatter.ISO_DATE)
+                ) + ".zip";
+            }
         }
-    }
 
-    // 2. 응답 헤더 설정
-    ContentDisposition contentDisposition = ContentDisposition.builder("attachment")
-            .filename(URLEncoder.encode(ZipFileNameGenerator.getZipFileName(), StandardCharsets.UTF_8))
-            .build();
-    response.setHeader(HttpHeaders.CONTENT_DISPOSITION, contentDisposition.toString());
-    response.setStatus(HttpServletResponse.SC_OK);
-    response.setContentType(MediaType.APPLICATION_OCTET_STREAM_VALUE);
+        // 2. 응답 헤더 설정
+        ContentDisposition contentDisposition = ContentDisposition.builder("attachment")
+                .filename(URLEncoder.encode(ZipFileNameGenerator.getZipFileName(), StandardCharsets.UTF_8))
+                .build();
+        response.setHeader(HttpHeaders.CONTENT_DISPOSITION, contentDisposition.toString());
+        response.setStatus(HttpServletResponse.SC_OK);
+        response.setContentType(MediaType.APPLICATION_OCTET_STREAM_VALUE);
 
-    // 3. ZIP 파일 생성
-    try (ZipOutputStream zipOutputStream = new ZipOutputStream(response.getOutputStream())) {
-        for (String keyName : keyNameList) {
-            try (S3Object s3Object = amazonS3.getObject(bucketName, keyName)) {
-                ZipEntry zipEntry = new ZipEntry(extractFileName(s3Object.getKey()));
-                zipOutputStream.putNextEntry(zipEntry);
-                byte[] buffer = new byte[INPUT_STREAM_BUFFER_SIZE];
-                int bytesRead;
-                while ((bytesRead = s3Object.getObjectContent().read(buffer)) != -1) {
-                    zipOutputStream.write(buffer, 0, bytesRead);
+        // 3. ZIP 파일 생성
+        try (ZipOutputStream zipOutputStream = new ZipOutputStream(response.getOutputStream())) {
+            for (String keyName : keyNameList) {
+                try (S3Object s3Object = amazonS3.getObject(bucketName, keyName)) {
+                    ZipEntry zipEntry = new ZipEntry(extractFileName(s3Object.getKey()));
+                    zipOutputStream.putNextEntry(zipEntry);
+                    byte[] buffer = new byte[INPUT_STREAM_BUFFER_SIZE];
+                    int bytesRead;
+                    while ((bytesRead = s3Object.getObjectContent().read(buffer)) != -1) {
+                        zipOutputStream.write(buffer, 0, bytesRead);
+                    }
+
+                    zipOutputStream.closeEntry();
                 }
-
-                zipOutputStream.closeEntry();
             }
         }
     }

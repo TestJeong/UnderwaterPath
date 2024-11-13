@@ -18,8 +18,6 @@ Swagger에서는 동일한 HTTP 상태 코드에 여러 메시지를 추가하�
 })
 ```
 
-이런 문제를 해결하고 Swagger 문서화를 자동화하기 위해 커스텀 어노테이션과 Swagger 설정을 수정하여 더 효율적인 방식을 도입했습니다.
-
 ## 문제 해결
 
 ### 1. 커스텀 어노테이션 생성
@@ -123,6 +121,7 @@ public class SwaggerExceptionExampleDto {
 
 1. 먼저 각 **enum 상수**(예: `"COUPON_NOT_FOUND"`)를 통해 해당 예외에 대한 **에러 코드, 메시지** 등의 정보를 추출합니다.
 2. 그런 다음 `HttpExceptionCreator.create()` 메서드를 사용해 **실제 예외 객체**(`NotFoundException`)를 생성합니다. 이 예외 객체는 **HTTP 상태 코드**, **에러 코드**, **메시지**와 같은 정보를 포함합니다.
+   (`HttpExceptionCreator.create()`을 모른다면 ["효율적인 예외 처리를 위한 커스텀 에러 코드 구축하기"](https://underwater-path.vercel.app/blog/Spring/customexception) 글을 한번 보고 와주세요!)
 3. 그런 다음, `getSwaggerExample()` 메서드를 이용해 예외의 구체적인 정보를 담은 **예시 객체**를 생성하고, 이 예시 객체는 `ExampleHolder`를 통해 관리됩니다. `ExampleHolder`는 예시 응답에 필요한 정보들을 모아서 HTTP 상태 코드별로 그룹화하고 정리해줍니다.
 4. 마지막으로, 이렇게 정리된 예시 응답들은 `addExamplesToResponses()` 메서드를 통해 **Swagger 문서에 추가**됩니다.
 

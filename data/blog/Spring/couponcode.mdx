@@ -6,8 +6,6 @@ draft: false
 summary: 고유한 쿠폰 코드 12자리를 만들어야 하는 상황이 생겼습니다.
 ---
 
-## 무엇을?
-
 고유한 쿠폰 코드 12자리를 만들어야 하는 상황이 생겼습니다.
 
 앞으로 다양한 외부 협력사와 협업 예정이며 마케팅 팀에서 더 많은 사용자를 확보하기 위해 쿠폰을 많이 사용할 예정이라고 하였습니다.
@@ -98,31 +96,3 @@ if (asciiCode > 90) {
 ## 결과는?
 
 코드를 구성하는 각 자리는 **숫자 10개(0~9)** 와 **대문자 알파벳 26개(A-Z)** 중 하나로 채워집니다. 한자리에서 선택할 수 있는 경우의 수는 10 + 26 = 36 가지가 있습니다. 코드가 12자리로 구성되어 있으니 각 자리에 36가지의 선택지를 가질 수 있는 상황이 12번 반복된다고 생각하면 약 4000조가 넘게 생성이 가능합니다. 또한 고유한 ID 값 기준으로 생성이 되니 쿠폰 코드의 중복 걱정과 총개수에 문제없이 생성이 가능합니다.
-
-쿠폰 코드를 대량으로 발급하는 상황에서도 속도 저하 없이 데이터베이스에 `INSERT`를 하기 위해 `JdbcTemplate`를 활용하여 벌크 인서트를 사용하였습니다.
-
-```java
-private final int defaultBatchSize = 10000;
-private final JdbcTemplate jdbcTemplate;
-
-public void saveAll(List<CouponCode> couponCodeList) {
-    String sql = "INSERT INTO coupon_code (coupon_id, client, code, is_registered, created_at, updated_at, expired_at) "
-            + "VALUES (?, ?, ?, ?, ?, ?, ?)";
-
-    jdbcTemplate.batchUpdate(
-            sql,
-            couponCodeList,
-            defaultBatchSize,
-            (PreparedStatement ps, CouponCode couponCode) -> {
-                ps.setLong(1, couponCode.getCouponId());
-                ps.setString(2, couponCode.getClient().getCode());
-                ps.setString(3, couponCode.getCode());
-                ps.setBoolean(4, couponCode.getIsRegistered());
-                ps.setTimestamp(5, java.sql.Timestamp.valueOf(LocalDateTime.now(ZoneId.of("Asia/Seoul"))));
-                ps.setTimestamp(6, java.sql.Timestamp.valueOf(LocalDateTime.now(ZoneId.of("Asia/Seoul"))));
-                ps.setTimestamp(7, java.sql.Timestamp.valueOf(couponCode.getExpiredAt()));
-            }
-    );
-
-}
-```
