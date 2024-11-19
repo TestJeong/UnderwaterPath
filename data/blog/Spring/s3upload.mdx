@@ -5,26 +5,28 @@ tags: ['spring']
 draft: false
 summary: 스프링 부트에서 s3에 이미지를 업로드해야 하는 상황이 생겨 정리 차원에서 글을 남겨 봅니다
 ---
+
 스프링 부트에서 s3에 이미지를 업로드해야 하는 상황이 생겨 정리 차원에서 글을 남겨 봅니다
 
-보통 파일 업로드 과정에서 **MultiPartFile** 을 이용하여 업로드를 하게 되는데 이것은 스프링에서 제공하는 인터페이스이며 이 인터페이스를 이용하여 파일을 업로드할 수 있습니다 해당 인터페이스에서는 파일의 이름, 크기, 내용과 같은 업로드된 파일의 내용에 액세스 하는 방법을 제공합니다 
+보통 파일 업로드 과정에서 **MultiPartFile** 을 이용하여 업로드를 하게 되는데 이것은 스프링에서 제공하는 인터페이스이며 이 인터페이스를 이용하여 파일을 업로드할 수 있습니다 해당 인터페이스에서는 파일의 이름, 크기, 내용과 같은 업로드된 파일의 내용에 액세스 하는 방법을 제공합니다
 
 아래와 같이 **MultiPartFile** 인터페이스에는 여러 메서드를 지원합니다
 
-| 메서드 이름                | 타입          | 설명                              |
-| --------------------- | ----------- | ------------------------------- |
-| getName()             | String      | 멀티파트 폼에서 메게변수 이름을 반환합니다         |
-| getContentType()      | String      | 파일의 콘텐츠 형식을 반환합니다               |
+| 메서드 이름           | 타입        | 설명                                                     |
+| --------------------- | ----------- | -------------------------------------------------------- |
+| getName()             | String      | 멀티파트 폼에서 메게변수 이름을 반환합니다               |
+| getContentType()      | String      | 파일의 콘텐츠 형식을 반환합니다                          |
 | getOriginalFilename() | String      | 클라이언트의 파일 시스템에서 실제 파일 이름을 반환합니다 |
-| isEmpty()             | boolean     | 업로드한 파일이 있는지 반환합니다              |
-| getSize()             | long        | 바이트의 파일 크기를 반환합니다               |
-| getByte()             | byte[]      | 바이트의 배열로 파일 내용을 반환합니다           |
-| getInputStream()      | InputStream | 파일 폼의 내용을 읽어 InputStream을 반환합니다 |
-| transferTo(File dest) | void        | 수신된 파일을 지정한 대상 파일에 전송합니다        |
+| isEmpty()             | boolean     | 업로드한 파일이 있는지 반환합니다                        |
+| getSize()             | long        | 바이트의 파일 크기를 반환합니다                          |
+| getByte()             | byte[]      | 바이트의 배열로 파일 내용을 반환합니다                   |
+| getInputStream()      | InputStream | 파일 폼의 내용을 읽어 InputStream을 반환합니다           |
+| transferTo(File dest) | void        | 수신된 파일을 지정한 대상 파일에 전송합니다              |
 
 MultiPartFile을 활용하여 파일을 업로드하는 방법은 여러 가지가 있지만 **여기서는 크게 2가지 getByte와 getinputStram을 이용하여 s3에 이미지를 업로드하는 것을 알아보겠습니다**
 
 ### Config 및 기본 설정
+
 aws s3 sdk를 아래와 같은 버전을 설치 합니다
 
 ```gradle
@@ -39,35 +41,34 @@ aws.credentials.secret-key=.....
 ```
 
 해당 키들을 관리할 수 있는 `AwsCredentialProperties` 클래스를 만듭니다
+
 ```java
-@Component  
-@ConfigurationProperties(prefix = "aws.credentials")  
-@Getter  
-@Setter  
-public class AwsCredentialProperties {  
-    private String accessKey;  
-    private String secretKey;  
+@Component
+@ConfigurationProperties(prefix = "aws.credentials")
+@Getter
+@Setter
+public class AwsCredentialProperties {
+    private String accessKey;
+    private String secretKey;
 }
 ```
 
-
 그다음 `config` 파일을 만듭니다
 
-
 ```java
-@Configuration  
-@RequiredArgsConstructor  
-public class AwsConfig {  
-    private final AwsCredentialProperties awsCredentialProperties;  
-  
-    @Bean  
-    public AmazonS3 amazonS3() {  
-        AWSCredentials awsCredentials = new BasicAWSCredentials(awsCredentialProperties.getAccessKey(), awsCredentialProperties.getSecretKey());  
-        return AmazonS3ClientBuilder.standard()  
-                .withRegion(Regions.AP_NORTHEAST_2)  
-                .withCredentials(new AWSStaticCredentialsProvider(awsCredentials))  
-                .build();  
-    }  
+@Configuration
+@RequiredArgsConstructor
+public class AwsConfig {
+    private final AwsCredentialProperties awsCredentialProperties;
+
+    @Bean
+    public AmazonS3 amazonS3() {
+        AWSCredentials awsCredentials = new BasicAWSCredentials(awsCredentialProperties.getAccessKey(), awsCredentialProperties.getSecretKey());
+        return AmazonS3ClientBuilder.standard()
+                .withRegion(Regions.AP_NORTHEAST_2)
+                .withCredentials(new AWSStaticCredentialsProvider(awsCredentials))
+                .build();
+    }
 
 }
 ```
@@ -75,21 +76,23 @@ public class AwsConfig {
 이제 aws sdk를 활용하여 s3에 업로드할 준비를 다 마쳤습니다
 
 ### getBytes() 방식이란?
+
 이 메서드는 업로드된 파일의 전체 내용을 **바이트 배열**(byte array)로 한 번에 읽어옵니다
 
->바이트 배열이란? 
->컴퓨터에서는 모든 데이터가 숫자로 표현됩니다. 그 숫자들의 가장 작은 단위가 **바이트**(byte)이며, 1바이트는 8비트로 구성됩니다. 문자, 이미지, 동영상 등의 모든 파일 데이터는 결국 바이트로 표현되며, 이 데이터들의 묶음을 **바이트 배열**이라고 부릅니다.
+> 바이트 배열이란?
+> 컴퓨터에서는 모든 데이터가 숫자로 표현됩니다. 그 숫자들의 가장 작은 단위가 **바이트**(byte)이며, 1바이트는 8비트로 구성됩니다. 문자, 이미지, 동영상 등의 모든 파일 데이터는 결국 바이트로 표현되며, 이 데이터들의 묶음을 **바이트 배열**이라고 부릅니다.
 
 [예제 코드]
+
 ```java
 public class S3UploadUtil {
     private final AmazonS3 amazonS3;
 
     public String upload(String bucket, MultipartFile multipartFile, String dirName) throws IOException {
-    
+
         File convertFile = convert(multipartFile)
                 .orElseThrow(() -> new IllegalArgumentException("file convert error"));
-                
+
         // S3에 저장할 파일명
         String fileName = dirName + "/" + convertFile.getName();
 
@@ -105,7 +108,7 @@ public class S3UploadUtil {
         return uploadImageUrl;
     }
 
-    // 파일 convert 후 로컬에 업로드
+    // 파일 convert 후 로컬에 업로드 (파일을 올리기 전 전처리 작업이 필요할 경우 사용)
     private Optional<File> convert(MultipartFile file) throws IOException {
         File convertFile = new File(System.getProperty("user.dir") + "/" + file.getOriginalFilename());
         if (convertFile.createNewFile()) {
@@ -119,12 +122,14 @@ public class S3UploadUtil {
 }
 ```
 
-위 코드는 클라이언트에서 전달받은 파일을 메모리에 한번 저장을 합니다 이러면 전처리(이미지 용량, 사이즈 수정) 작업을 할 수 있습니다 그리고 s3에 업로드 후 로컬에 있는 파일을 지우는 프로세스를 가지고 있습니다 
+위 코드는 클라이언트에서 전달받은 파일을 메모리에 한번 저장을 합니다 이러면 전처리(이미지 용량, 사이즈 수정) 작업을 할 수 있습니다 그리고 s3에 업로드 후 로컬에 있는 파일을 지우는 프로세스를 가지고 있습니다
 
-자주 사용하지 않고 Admin에서 사용할 API이며 파일 용량 또한 크지 않기 때문에 전처리 기능도 필요 없어 이 방법이 아닌 아래의 Stream 방식으로 구현하였습니다
+자주 사용하지 않고 Admin에서 사용할 API이며 파일 용량 또한 크지 않기 때문에 전처리 기능도 필요 없어 **이 방법이 아닌 아래의 Stream 방식으로 구현하였습니다**
 
 ---
+
 ### getInputStream 방식이란?
+
 서버에 임시로 저장하지 않고 바로 s3에 저장할 수 있습니다
 
 이 방식을 알기 전에 **Stream**에 대해 알고 있어야 하므로 간단하게 알아보겠습니다
@@ -132,13 +137,13 @@ public class S3UploadUtil {
 **스트림(Stream)** 은 프로그래밍에서 데이터를 전달하는 연결 통로라고 할 수 있습니다 이는 데이터가 원본(파일, 메모리)에서 목적지까지 단방향으로만 흐르도록 설계되어 있어 입력과 출력을 동시에 처리하려면 각각 별도의 스트림이 필요합니다 입력 데이터를 처리하는 **입력 스트림(InputStream)** 과 데이터를 외부로 전송하는 **출력 스트림(OutputStream)** 으로 구분됩니다.
 
 1. **입력 스트림 (InputStream)**
-	데이터 소스로부터 데이터를 읽어 들이는 용도로 사용됩니다 이를 통해 파일이나 다른 소스로부터 데이터를 읽어 프로그램 내로 가져올 수 있습니다
+   데이터 소스로부터 데이터를 읽어 들이는 용도로 사용됩니다 이를 통해 파일이나 다른 소스로부터 데이터를 읽어 프로그램 내로 가져올 수 있습니다
 
 2. **출력 스트림 (OutputStream)**
-	데이터를 외부로 출력하기 위해 사용됩니다. 이를 통해 생성한 데이터를 파일에 쓰거나 네트워크를 통해 전송할 수 있습니다
-
+   데이터를 외부로 출력하기 위해 사용됩니다. 이를 통해 생성한 데이터를 파일에 쓰거나 네트워크를 통해 전송할 수 있습니다
 
 [예제 코드]
+
 ```java
 public class S3UploadUtil {
     private final AmazonS3 amazonS3;
@@ -175,7 +180,7 @@ public class S3UploadUtil {
 
 			// S3에 파일 업로드
             amazonS3.putObject(new PutObjectRequest(bucket, objectPath, inputStream, metadata));
-            
+
             return objectPath;
         }
     }
@@ -184,20 +189,24 @@ public class S3UploadUtil {
 
 위 예제코드에서는 크게 3가지로 나눠져 있습니다
 
-파일을 s3에 업로드하는 `upload()` 메서드와 파일을 업데이트할 수 있는 `update()` 메서드 그리고 실질적으로 s3에 파일을 업로드하는 **private** 메서드인  `uploadFile()` 이 있습니다 하나씩 알아보겠습니다
+파일을 s3에 업로드하는 `upload()` 메서드와 파일을 업데이트할 수 있는 `update()` 메서드 그리고 실질적으로 s3에 파일을 업로드하는 **private** 메서드인 `uploadFile()` 이 있습니다 하나씩 알아보겠습니다
+
 #### upload()
+
 s3에 파일을 업로드하는 메서드입니다 파라미터로 bucket, MultipartFile, dirName(경로)를 받습니다 dirName은 s3에서 파일을 저장할 경로를 말합니다
 
 예를 들어 `test/s3upload` 경로에 `file.png` 파일을 업로드하고 싶을 경우 **dirName**에 `test/s3upload` 를 전달하면 **objectPath** 부분에서 전달받은 `dirName + "/" + 파일 이름` 으로 경로를 재생성 후 s3에 업로드하게 됩니다
+
 #### update()
-s3에 있는 파일을 업데이트하는 메서드입니다 파라미터로  bucket, MultipartFile, objectPath(경로)를 받습니다 
+
+s3에 있는 파일을 업데이트하는 메서드입니다 파라미터로 bucket, MultipartFile, objectPath(경로)를 받습니다
 
 나머지는 upload와 같고 **objectPath**는 파일을 업로드 후 return값으로 **objectPath**를 반환하는데 이 반환값을 넘겨주어야 합니다 그러면 `amazonS3.getObjectMetadata()` 메서드를 이용하여 해당 버킷에 해당 경로에 파일이 있는지 확인한 후 파일이 있다면 새로운 파일로 업데이트가 되고 만약 일치하는 정보가 없다면 catch 문에서 throw를 통해 **Exception**이 발생하게 됩니다
 
 #### uploadFile()
+
 inputStream을 매개변수로 받는 메서드의 경우에는 마지막으로 `ObjectMetadata`를 추가로 받는 것을 볼 수 있습니다 이는 `InputStream`을 통해 `Byte`만이 전달되기 때문에, 해당 파일에 대한 정보가 없어 `ObjectMetadata`에 파일에 대한 정보를 추가하여 매개변수로 같이 전달해야 합니다
 
-추가적으로 자원 관리를 조금 더 쉽고 효율적으로 관리하기 위해 try-with-resources를 사용하였습니다 InputStream 객체를 try-with-resources 문의 파라미터로 생성하면 이 구문을 벗어날 때 자동으로 InputStream의 `close()` 메서드가 호출되어 자원이 해제됩니다 이 방식은 InputStream이 `AutoCloseable` 인터페이스를 구현하기 때문에 가능한 부분입니다  `AutoCloseable`을 구현하지 않은 객체는 이러한 방식으로 자동 해제되지 않습니다 
+추가적으로 자원 관리를 조금 더 쉽고 효율적으로 관리하기 위해 try-with-resources를 사용하였습니다 InputStream 객체를 try-with-resources 문의 파라미터로 생성하면 이 구문을 벗어날 때 자동으로 InputStream의 `close()` 메서드가 호출되어 자원이 해제됩니다 이 방식은 InputStream이 `AutoCloseable` 인터페이스를 구현하기 때문에 가능한 부분입니다 `AutoCloseable`을 구현하지 않은 객체는 이러한 방식으로 자동 해제되지 않습니다
 
 try-with-resources를 사용함으로써 자원 해제 코드를 간소화할 수 있는 장점이 있습니다
-
