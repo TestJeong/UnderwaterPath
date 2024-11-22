@@ -190,22 +190,16 @@ public interface ProductRepository extends JpaRepository<Products, Long> {
   2. 주문 아이템 테이블에 접근하여 X-Lock을 획득
   3. 필요한 작업 수행 후 커밋
 
-#### 2. 비관적 잠금 사용
+#### 2. 타임아웃 설정하기
 
-데이터를 조회하는 시점에서 바로 수정을 예정하고 있다면 `SELECT ... FOR UPDATE` 구문을 사용하여 데이터를 처음 읽을 때부터 X-Lock을 획득합니다 이 방식은 데이터를 읽은 후에 다른 트랜잭션이 해당 데이터를 변경할 수 없게 만들어 데이터 일관성을 유지하면서 데드락의 가능성을 줄입니다
+교착 상태가 발생했을 때 무한정 대기하지 않고, 일정 시간이 지나면 트랜잭션을 포기하도록 타임아웃을 설정합니다
 
-**[ 예시 ]**
-
-- **트랜잭션 A**:
-
-  1. `SELECT * FROM 상품 WHERE 상품ID = 1 FOR UPDATE;`
-  2. 주문 아이템 추가 및 상품 재고 감소
-  3. 커밋
-
-- **트랜잭션 B**:
-  1. `SELECT * FROM 상품 WHERE 상품ID = 1 FOR UPDATE;` (트랜잭션 A가 커밋할 때까지 대기)
-  2. 주문 아이템 추가 및 상품 재고 감소
-  3. 커밋
+```java
+@Transactional(timeout = 10) // 10초 후 타임아웃
+public void processOrder() {
+    // 트랜잭션 로직
+}
+```
 
 #### 3. 트랜잭션 분리
 
