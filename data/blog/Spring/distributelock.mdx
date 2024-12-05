@@ -6,6 +6,8 @@ draft: false
 summary: 여러 컴퓨터나 서버가 동시에 같은 자원에 접근하려 할 때 이를 제어하기 위해 자원에 락을 거는 방법입니다. 여러 컴퓨터 사이에서 자원 접근을 조율하여 동시에 하나의 자원을 쓰지 못하게 순서를 정해주는 장치라고 생각하면 됩니다.
 ---
 
+(2024.12.3 Update)
+
 ## 분산락이란?
 
 여러 컴퓨터나 서버가 동시에 같은 자원에 접근하려 할 때 이를 제어하기 위해 자원에 락을 거는 방법입니다. 여러 컴퓨터 사이에서 자원 접근을 조율하여 동시에 하나의 자원을 쓰지 못하게 순서를 정해주는 장치라고 생각하면 됩니다.
@@ -145,6 +147,53 @@ public @interface DistributedLock {
 }
 ```
 
+#### 트랜잭션 처리 AOP
+
+```java
+@Component
+public class TransactionForAspect {
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public Object proceed(final ProceedingJoinPoint joinPoint) throws Throwable {
+        return joinPoint.proceed();
+    }
+}
+```
+
+조금 눈여겨봐야할 곳이 여기입니다. `@DistributedLock` 이 선언된 메서드는 `Propagation.REQUIRES_NEW` 옵션을 지정해 부모 트랜잭션의 유무에 관계없이 별도의 트랜잭션으로 동작하게끔 설정했습니다.
+그리고 **반드시 트랜잭션 커밋 이후** 락이 해제되게끔 처리했습니다.
+
+이렇게 따로 빼서 트랜잭션에 옵션을 주는 이유는 무엇일까요? 바로 **정합성** 때문에 트랜잭션의 기본 옵션이 `REREQUIRED`를 쓰지 않고 `REQUIRES_NEW`를 사용했습니다.
+
+#### 트랜잭션 기본 옵션(REQUIRED)에서의 동작
+
+1. 락 획득(AOP에서 락을 잡음).
+2. 트랜잭션 시작.
+3. 데이터베이스 작업 수행.
+4. 트랜잭션 커밋.
+5. 락 해제(트랜잭션 커밋 이후 finally 블록에서).
+
+문제점:
+
+기본 옵션인 `REQUIRED를` 사용할 경우, 락과 데이터베이스 작업이 같은 트랜잭션 내에서 실행됩니다.
+이 트랜잭션은 상위 호출자의 트랜잭션과 결합될 수 있습니다.
+즉, 락이 해제되더라도 상위 트랜잭션이 끝나지 않았다면, 락 해제와 데이터 커밋 간의 시간 차이가 발생합니다.
+결과적으로 락이 해제된 상태에서 다른 스레드가 잘못된 데이터를 읽거나 작업을 시작할 수 있습니다.
+
+#### 트랜잭션 옵션(REQUIRES_NEW)에서의 동작
+
+1. 락 획득(AOP에서 락을 잡음).
+2. 별도의 새로운 트랜잭션(REQUIRES_NEW) 시작.
+3. 데이터베이스 작업 수행.
+4. 트랜잭션 커밋.
+5. 락 해제(트랜잭션 커밋 후 finally 블록에서).
+
+장점:
+
+데이터베이스 작업이 별도의 트랜잭션에서 실행되므로 상위 호출자의 트랜잭션과 독립적입니다. 즉, 데이터베이스 작업을 별도로 나눠서 처리할 수 있습니다. 락을 사용하는 부분과 실제 데이터 저장 부분이 서로 영향을 안 주고 따로 작동하게 만들게 됩니다.
+그래서 트랜잭션 커밋이 완료된 후 락이 해제되므로 정합성이 보장됩니다.
+
+<br />
+
 #### 분산락
 
 ```java
@@ -154,6 +203,7 @@ public @interface DistributedLock {
 public class DistributedLockAspect {
 	private static final String REDISSON_LOCK_PREFIX = "LOCK_KEY:";
     private final RedissonClient redissonClient;
+    private final TransactionForAspect transactionForAspect;
 
     @Around("@annotation(distributedLock)")
     public Object around(ProceedingJoinPoint joinPoint) throws Throwable {
@@ -169,7 +219,7 @@ public class DistributedLockAspect {
             acquired = lock.tryLock(lock.waitTime(), lock.leaseTime(), lock.timeUnit());
             if (acquired) {
                 // 락 획득 성공 시, 대상 메서드 실행
-                return joinPoint.proceed();
+                return transactionForAspect.proceed(joinPoint);
             } else {
                 // 락 획득 실패 시, 필요한 예외 처리 또는 대체 로직
                 throw new IllegalStateException("Lock acquisition failed.");
