@@ -16,7 +16,7 @@ module.exports = {
   theme: {
     extend: {
       screens: {
-        mobile: { max: '400px' },
+        mobile: { max: '500px' },
         // => @media (min-width: 640px) { ... }
       },
       lineHeight: {
