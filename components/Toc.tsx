@@ -11,7 +11,7 @@ interface TOCItem {
 }
 
 interface TOCProps {
-  headings: TOCItem[]
+  headings: any
 }
 
 export default function TOC({ headings }: TOCProps) {
