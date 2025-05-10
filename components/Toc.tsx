@@ -46,21 +46,25 @@ export default function TOC({ headings }: TOCProps) {
     <nav className="sticky top-24 hidden max-h-[80vh] overflow-y-auto pr-4 xl:block">
       <h2 className="mb-4 text-sm font-bold text-gray-700 dark:text-gray-300">📚 목차</h2>
       <ul className="space-y-2 text-sm text-gray-700 dark:text-gray-300">
-        {headings.map((item) => {
-          const isActive = item.url === `#${activeId}`
-          return (
-            <li key={item.url} className={`ml-${(item.depth - 2) * 4}`}>
-              <Link
-                href={item.url}
-                className={`block transition-colors duration-200 ${
-                  isActive ? 'font-bold text-primary-500' : ''
-                }`}
-              >
-                {item.value}
-              </Link>
-            </li>
-          )
-        })}
+        {headings
+          .filter((item) => item.depth === 2 || item.depth === 3)
+          .map((item, index) => {
+            const isActive = `#${activeId}` === item.url
+            const isSub = item.depth === 3
+
+            return (
+              <li key={item.url} className={isSub ? 'ml-4' : ''}>
+                <Link
+                  href={item.url}
+                  className={`block transition-colors duration-200 ${
+                    isActive ? 'font-bold text-primary-500' : ''
+                  }`}
+                >
+                  {item.value}
+                </Link>
+              </li>
+            )
+          })}
       </ul>
     </nav>
   )
