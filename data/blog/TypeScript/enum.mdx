@@ -65,7 +65,7 @@ export const Color = {
 } as const
 ```
 
-as const는 **타입스크립트 컴파일 타임에서만 작동**합니다. 각 프로퍼티의 타입을 **리터럴 타입**으로 고정해서 타입 안전성을 높여줍니다. 하지만 주의할 점이 있습니다: **실행 시에는 아무 일도 일어나지 않습니다.** 즉, 런타임에서는 그냥 평범한 객체일 뿐이므로 실제 실행 중에는 객체를 변경할 수 있습니다.
+as const는 **타입스크립트 컴파일 타임에서만 작동**합니다. 각 프로퍼티의 타입을 **리터럴 타입**으로 고정해서 타입 안전성을 높여줍니다. 하지만 주의할 점이 있습니다. **실행 시에는 아무 일도 일어나지 않습니다.** 즉, 런타임에서는 그냥 평범한 객체일 뿐이므로 실제 실행 중에는 객체를 변경할 수 있습니다.
 
 ```typescript
 // 컴파일 환경
@@ -73,7 +73,7 @@ Color.RED = 'something else' // 타입 오류 발생!
 ```
 
 ```typescript
-// 런타입 환경
+// 런타임 환경
 Color.RED = 'SOMETHING_ELSE' //  런타임에서는 변경됨!
 console.log(Color.RED) // 'SOMETHING_ELSE'
 ```
@@ -97,7 +97,7 @@ function colorFunction(color: typeof Color) {
   return color
 }
 
-colorFunction('red')
+colorFunction('red') // 타입 오류!
 ```
 
 이렇게 사용 할경우 아래와 같은 타입 오류가 발생합니다. 현재 해당 함수의 파라미터 **Color**는 기대하는 건 “red”라는 문자열이 아니라 **전체 객체 그 자체** 를 원하고 있습니다.
