@@ -6,7 +6,7 @@ const siteMetadata = {
   description: '듣고, 읽고, 배운 것을 기록하며 성장하는 공간입니다 🍀',
   language: 'ko-KR',
   theme: 'system', // system, dark or light
-  siteUrl: 'https://underwater-path.vercel.app/',
+  siteUrl: 'https://underwater-path.vercel.app',
   // siteRepo: 'https://github.com/timlrx/tailwind-nextjs-starter-blog',
   siteLogo: '/static/images/logo.png',
   socialBanner: '/static/images/twitter-card.png',
